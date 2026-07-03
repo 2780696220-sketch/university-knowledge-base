@@ -1,0 +1,1 @@
+[{"_id":{"$oid":"6a4424a4988f30b940ecd07f"},"username":"admin","email":"admin@university.local","password":"$2a$12$TO7hzaTMMPgIAU4fU8Ied.8WPFNV2tbFz/kwqOhEr5/aAFXom7QiG","role":"admin","createdAt":{"$date":"2026-06-30T20:18:44.313Z"},"updatedAt":{"$date":"2026-06-30T20:18:44.313Z"},"__v":0}]

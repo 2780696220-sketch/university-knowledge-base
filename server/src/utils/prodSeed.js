@@ -20,17 +20,22 @@ const COLLECTIONS = [
 async function prodSeed() {
   const db = mongoose.connection.db;
 
+  console.log(`  种子目录: ${SEEDS_DIR}`);
+  const dirExists = fs.existsSync(SEEDS_DIR);
+  console.log(`  目录存在: ${dirExists}`);
+
   for (const { file, collection } of COLLECTIONS) {
+    const filePath = path.join(SEEDS_DIR, file);
+    console.log(`  检查 ${filePath} ...`);
+    if (!fs.existsSync(filePath)) {
+      console.log(`  ⚠ ${file} 不存在: ${filePath}`);
+      continue;
+    }
+
     // Check if collection needs seeding
     const count = await db.collection(collection).countDocuments();
     if (count > 0) {
       console.log(`  ⊘ ${collection}: 已有 ${count} 条，跳过`);
-      continue;
-    }
-
-    const filePath = path.join(SEEDS_DIR, file);
-    if (!fs.existsSync(filePath)) {
-      console.log(`  ⚠ ${file} 不存在，跳过 ${collection}`);
       continue;
     }
 
@@ -43,6 +48,7 @@ async function prodSeed() {
 
     // Strip _id so MongoDB generates new ObjectIds
     const cleaned = docs.map(({ _id, ...rest }) => rest);
+    console.log(`  正在导入 ${cleaned.length} 条到 ${collection}...`);
     await db.collection(collection).insertMany(cleaned);
     console.log(`  ✓ ${collection}: 已导入 ${cleaned.length} 条`);
   }

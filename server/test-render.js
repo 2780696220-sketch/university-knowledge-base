@@ -1,47 +1,52 @@
-// 极简 Render 连通性测试
-console.log('Node 版本:', process.version);
+// 逐步诊断 MongoDB 连接问题
+console.log('=== Render MongoDB 诊断 ===');
+console.log('Node:', process.version);
 console.log('CWD:', process.cwd());
-console.log('ENV keys:', Object.keys(process.env).filter(k => !k.includes('npm_')).join(', '));
 
-const mongoose = require('mongoose');
-const fs = require('fs');
-const path = require('path');
-
-const MONGODB_URI = process.env.MONGODB_URI || 'not-set';
-console.log('MONGODB_URI 已设置:', MONGODB_URI !== 'not-set');
-
-// 检查 seed 文件
-const SEEDS_DIR = path.join(__dirname, 'seeds');
-console.log('Seed 目录:', SEEDS_DIR);
-if (fs.existsSync(SEEDS_DIR)) {
-  const files = fs.readdirSync(SEEDS_DIR);
-  console.log('Seed 文件:', files.join(', '));
-} else {
-  console.log('Seed 目录不存在!');
+// 步骤1: 测试能否加载 mongoose
+console.log('\n1. 加载 mongoose...');
+try {
+  const mongoose = require('mongoose');
+  console.log('   ✓ mongoose 加载成功, 版本:', mongoose.version);
+} catch (e) {
+  console.error('   ✗ mongoose 加载失败:', e.message);
+  process.exit(1);
 }
 
-async function main() {
-  try {
-    console.log('正在连接 MongoDB...');
-    await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 15000,
-    });
-    console.log('MongoDB 连接成功!');
-    console.log('Host:', mongoose.connection.host);
+// 步骤2: 检查环境变量
+const MONGODB_URI = process.env.MONGODB_URI;
+console.log('\n2. MONGODB_URI:', MONGODB_URI ? '***' + MONGODB_URI.slice(-40) : '未设置!');
+if (!MONGODB_URI) {
+  console.error('   ✗ 缺少 MONGODB_URI');
+  process.exit(1);
+}
 
-    // Ping test
-    const adminDb = mongoose.connection.db.admin();
-    const ping = await adminDb.ping();
-    console.log('Ping:', JSON.stringify(ping));
+// 步骤3: 尝试连接
+const mongoose = require('mongoose');
+
+async function main() {
+  console.log('\n3. 连接 MongoDB...');
+  try {
+    const conn = await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 30000,
+      connectTimeoutMS: 30000,
+    });
+    console.log('   ✓ 连接成功! Host:', conn.connection.host);
+    console.log('   Database:', conn.connection.name);
+
+    // Ping
+    const ping = await conn.connection.db.admin().ping();
+    console.log('   Ping:', JSON.stringify(ping));
 
     await mongoose.disconnect();
-    console.log('测试通过 ✓');
+    console.log('\n=== 测试通过 ✓ ===');
     process.exit(0);
   } catch (err) {
-    console.error('失败:', err.message);
-    console.error('Stack:', err.stack?.split('\n').slice(0, 3).join('\n'));
+    console.error('   ✗ 连接失败:', err.message);
+    console.error('   错误类型:', err.name);
+    console.error('   错误码:', err.code);
+    if (err.reason) console.error('   原因:', JSON.stringify(err.reason));
     process.exit(1);
   }
 }
-
 main();

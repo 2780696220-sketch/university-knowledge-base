@@ -2,10 +2,12 @@
  * 生产环境种子脚本 — Render 启动时自动将 JSON 数据导入 Atlas。
  *
  * 仅当对应集合为空时才导入（幂等），确保重启不丢数据。
+ * 保留原始 _id 和 ObjectId 引用，确保关联完整性。
  */
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+const { ObjectId } = require('mongodb');
 
 const SEEDS_DIR = path.join(__dirname, '../../seeds');
 
@@ -16,6 +18,30 @@ const COLLECTIONS = [
   { file: 'majors.json',      collection: 'majors' },
   { file: 'courses.json',     collection: 'courses' },
 ];
+
+/**
+ * 递归转换 Extended JSON 中的 {$oid: '...'} 为 BSON ObjectId
+ */
+function convertObjectIds(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(convertObjectIds);
+  if (typeof obj === 'object') {
+    // Detect Extended JSON ObjectId: {"$oid": "..."}
+    if (obj.$oid && typeof obj.$oid === 'string') {
+      return new ObjectId(obj.$oid);
+    }
+    // Detect Extended JSON Date: {"$date": "..."}
+    if (obj.$date && typeof obj.$date === 'string') {
+      return new Date(obj.$date);
+    }
+    const result = {};
+    for (const [k, v] of Object.entries(obj)) {
+      result[k] = convertObjectIds(v);
+    }
+    return result;
+  }
+  return obj;
+}
 
 async function prodSeed() {
   const db = mongoose.connection.db;
@@ -46,11 +72,11 @@ async function prodSeed() {
       continue;
     }
 
-    // Strip _id so MongoDB generates new ObjectIds
-    const cleaned = docs.map(({ _id, ...rest }) => rest);
-    console.log(`  正在导入 ${cleaned.length} 条到 ${collection}...`);
-    await db.collection(collection).insertMany(cleaned);
-    console.log(`  ✓ ${collection}: 已导入 ${cleaned.length} 条`);
+    // Convert Extended JSON ObjectIds/Dates to proper BSON types
+    const converted = docs.map(convertObjectIds);
+    console.log(`  正在导入 ${converted.length} 条到 ${collection}...`);
+    await db.collection(collection).insertMany(converted);
+    console.log(`  ✓ ${collection}: 已导入 ${converted.length} 条`);
   }
 
   console.log('  种子数据检查完毕');

@@ -1,52 +1,63 @@
-// 逐步诊断 MongoDB 连接问题
-console.log('=== Render MongoDB 诊断 ===');
-console.log('Node:', process.version);
-console.log('CWD:', process.cwd());
-
-// 步骤1: 测试能否加载 mongoose
-console.log('\n1. 加载 mongoose...');
+// 最小 mongoose 隔离测试
+console.log('=== Step 1: require mongoose ===');
 try {
   const mongoose = require('mongoose');
-  console.log('   ✓ mongoose 加载成功, 版本:', mongoose.version);
+  console.log('OK, mongoose version:', mongoose.version);
 } catch (e) {
-  console.error('   ✗ mongoose 加载失败:', e.message);
+  console.log('FAIL:', e.message);
   process.exit(1);
 }
 
-// 步骤2: 检查环境变量
-const MONGODB_URI = process.env.MONGODB_URI;
-console.log('\n2. MONGODB_URI:', MONGODB_URI ? '***' + MONGODB_URI.slice(-40) : '未设置!');
-if (!MONGODB_URI) {
-  console.error('   ✗ 缺少 MONGODB_URI');
+console.log('=== Step 2: check env ===');
+const uri = process.env.MONGODB_URI;
+if (uri) {
+  console.log('OK, MONGODB_URI length:', uri.length, 'ends with:', uri.slice(-40));
+} else {
+  console.log('FAIL: MONGODB_URI not set');
   process.exit(1);
 }
 
-// 步骤3: 尝试连接
-const mongoose = require('mongoose');
-
-async function main() {
-  console.log('\n3. 连接 MongoDB...');
-  try {
-    const conn = await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 30000,
-      connectTimeoutMS: 30000,
-    });
-    console.log('   ✓ 连接成功! Host:', conn.connection.host);
-    console.log('   Database:', conn.connection.name);
-
-    // Ping
-    const ping = await conn.connection.db.admin().ping();
-    console.log('   Ping:', JSON.stringify(ping));
-
-    await mongoose.disconnect();
-    console.log('\n=== 测试通过 ✓ ===');
-    process.exit(0);
-  } catch (err) {
-    console.error('   ✗ 连接失败:', err.message);
-    console.error('   错误类型:', err.name);
-    console.error('   错误码:', err.code);
-    if (err.reason) console.error('   原因:', JSON.stringify(err.reason));
+console.log('=== Step 3: dns resolve ===');
+const dns = require('dns');
+dns.resolve('cluster0.zz5s9za.mongodb.net', (err, addresses) => {
+  if (err) {
+    console.log('FAIL:', err.message);
     process.exit(1);
   }
-}
-main();
+  console.log('OK, IPs:', addresses.join(', '));
+
+  console.log('=== Step 4: tcp connect ===');
+  const net = require('net');
+  const sock = net.createConnection({ host: addresses[0], port: 27017 }, () => {
+    console.log('OK, TCP connected to', addresses[0]);
+    sock.end();
+    console.log('=== Basic connectivity OK, now try mongoose ===');
+
+    console.log('=== Step 5: mongoose connect ===');
+    const mongoose = require('mongoose');
+    mongoose.connect(uri, { serverSelectionTimeoutMS: 20000 })
+      .then(() => {
+        console.log('OK, mongoose connected!');
+        return mongoose.disconnect();
+      })
+      .then(() => {
+        console.log('=== ALL TESTS PASSED ===');
+        process.exit(0);
+      })
+      .catch(err => {
+        console.log('FAIL mongoose connect:', err.message);
+        console.log('Error code:', err.code);
+        console.log('Error name:', err.name);
+        process.exit(1);
+      });
+  });
+  sock.on('error', (err) => {
+    console.log('FAIL TCP:', err.message);
+    process.exit(1);
+  });
+  sock.setTimeout(10000, () => {
+    console.log('FAIL TCP timeout');
+    sock.destroy();
+    process.exit(1);
+  });
+});
